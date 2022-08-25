@@ -2,11 +2,14 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/athena"
+	"github.com/aws/aws-sdk-go/service/cloudtrail"
 	"github.com/turbot/steampipe-plugin-sdk/v3/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v3/plugin"
 )
@@ -22,11 +25,11 @@ func tableAwsAthenaQueryExecution(_ context.Context) *plugin.Table {
 			Hydrate:    getAwsAthenaQueryExecution,
 		},
 		List: &plugin.ListConfig{
-			// Hydrate: listAwsAthenaQueryExecutions,
 			KeyColumns: []*plugin.KeyColumn{
-				{Name: "query_id", Require: plugin.Required},
+				{Name: "start_time", Require: plugin.Optional},
+				{Name: "end_time", Require: plugin.Optional},
 			},
-			Hydrate: getAwsAthenaQueryExecution,
+			Hydrate: listAwsAthenaQueryExecutions,
 		},
 		GetMatrixItem: BuildRegionList,
 		// Columns: awsRegionalColumns([]*plugin.Column{
@@ -141,6 +144,26 @@ func tableAwsAthenaQueryExecution(_ context.Context) *plugin.Table {
 				Description: "The time at completion of query",
 				Type:        proto.ColumnType_TIMESTAMP,
 			},
+			{
+				Name:        "start_time",
+				Description: "The trail time at start of query",
+				Type:        proto.ColumnType_STRING,
+			},
+			{
+				Name:        "end_time",
+				Description: "The trail time at end of query",
+				Type:        proto.ColumnType_STRING,
+			},
+			{
+				Name:        "username",
+				Description: "The username executed query",
+				Type:        proto.ColumnType_STRING,
+			},
+			{
+				Name:        "event_time",
+				Description: "The time at completion of query",
+				Type:        proto.ColumnType_TIMESTAMP,
+			},
 		}),
 	}
 }
@@ -168,6 +191,10 @@ type AthenaQueryExecution struct {
 	StateChangeReason                 string
 	SubmissionTime                    time.Time
 	CompletionTime                    time.Time
+	StartTime                         string
+	EndTime                           string
+	Username                          string
+	EventTime                         time.Time
 }
 
 func MakeQueryExecutionRow(qe *athena.GetQueryExecutionOutput) AthenaQueryExecution {
@@ -235,9 +262,119 @@ func MakeQueryExecutionRow(qe *athena.GetQueryExecutionOutput) AthenaQueryExecut
 	return aqes
 }
 
+type CloudTrailEvent struct {
+	EventVersion       string            `json:"eventVersion"`
+	UserIdentity       UserIdentity      `json:"userIdentity"`
+	EventTime          time.Time         `json:"eventTime"`
+	EventSource        string            `json:"eventSource"`
+	EventName          string            `json:"eventName"`
+	AwsRegion          string            `json:"awsRegion"`
+	SourceIPAddress    string            `json:"sourceIPAddress"`
+	UserAgent          string            `json:"userAgent"`
+	RequestParameters  RequestParameters `json:"requestParameters"`
+	ResponseElements   ResponseElements  `json:"responseElements"`
+	RequestID          string            `json:"requestID"`
+	EventID            string            `json:"eventID"`
+	ReadOnly           bool              `json:"readOnly"`
+	EventType          string            `json:"eventType"`
+	ManagementEvent    bool              `json:"managementEvent"`
+	RecipientAccountID string            `json:"recipientAccountId"`
+	EventCategory      string            `json:"eventCategory"`
+	TLSDetails         TLSDetails        `json:"tlsDetails"`
+}
+
+type RequestParameters struct {
+	QueryString        string `json:"queryString"`
+	ClientRequestToken string `json:"clientRequestToken"`
+	WorkGroup          string `json:"workGroup"`
+}
+
+type ResponseElements struct {
+	QueryExecutionID string `json:"queryExecutionId"`
+}
+
+type TLSDetails struct {
+	ClientProvidedHostHeader string `json:"clientProvidedHostHeader"`
+}
+
+type UserIdentity struct {
+	Type           string         `json:"type"`
+	PrincipalID    string         `json:"principalId"`
+	Arn            string         `json:"arn"`
+	AccountID      string         `json:"accountId"`
+	AccessKeyID    string         `json:"accessKeyId"`
+	SessionContext SessionContext `json:"sessionContext"`
+}
+
+type SessionContext struct {
+	SessionIssuer       SessionIssuer     `json:"sessionIssuer"`
+	WebIDFederationData map[string]string `json:"webIdFederationData"`
+	Attributes          Attributes        `json:"attributes"`
+}
+
+type Attributes struct {
+	CreationDate     string `json:"creationDate"`
+	MfaAuthenticated string `json:"mfaAuthenticated"`
+}
+
+type SessionIssuer struct {
+	Type        string `json:"type"`
+	PrincipalID string `json:"principalId"`
+	Arn         string `json:"arn"`
+	AccountID   string `json:"accountId"`
+	UserName    string `json:"userName"`
+}
+
 //// LIST FUNCTION
 
 func listAwsAthenaQueryExecutions(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (interface{}, error) {
+	region := d.KeyColumnQualString(matrixKeyRegion)
+	svcCT, err := CloudTrailService(ctx, d, region)
+	if err != nil {
+		plugin.Logger(ctx).Error("aws_athena_query_execution.listAwsAthenaQueryExecutions.CloudTrailService", "parse_error", err)
+		return nil, err
+	}
+	var inputStartTime string
+	var inputEndTime string
+	if d.KeyColumnQuals["start_time"] != nil {
+		inputStartTime = d.KeyColumnQuals["start_time"].GetStringValue()
+		plugin.Logger(ctx).Error("inputStartTime:"+inputStartTime, "parse_error", err)
+
+	}
+	if d.KeyColumnQuals["end_time"] != nil {
+		inputEndTime = d.KeyColumnQuals["end_time"].GetStringValue()
+		plugin.Logger(ctx).Error("inputEndTime:"+inputEndTime, "parse_error", err)
+	}
+
+	var startTime time.Time
+	var endTime time.Time
+
+	if inputEndTime != "" {
+		t_endTime, err := time.Parse("2006-01-02 15:04:05", inputEndTime)
+		if err != nil {
+			plugin.Logger(ctx).Error("listAwsAthenaQueryExecutions.EndTime syntax mismatch usage) 2006-01-02 15:04:05", "parse_error", err)
+			return nil, err
+		}
+		endTime = t_endTime
+	} else {
+		endTime = time.Now()
+	}
+	if inputStartTime != "" {
+		t_startTime, err := time.Parse("2006-01-02 15:04:05", inputStartTime)
+		if err != nil {
+			plugin.Logger(ctx).Error("listAwsAthenaQueryExecutions.StartTime syntax mismatch usage) 2006-01-02 15:04:05", "parse_error", err)
+			return nil, err
+		}
+		startTime = t_startTime
+		if inputEndTime == "" {
+			endTime = startTime.Add(1 * time.Hour)
+		}
+	} else {
+		startTime = endTime.Add(-1 * time.Hour)
+	}
+
+	// plugin.Logger(ctx).Error("@DBG:"+inputStartTime+","+inputEndTime, "parse_error", err)
+
 	// Create Session
 	svc, err := AthenaService(ctx, d)
 	if err != nil {
@@ -253,35 +390,66 @@ func listAwsAthenaQueryExecutions(ctx context.Context, d *plugin.QueryData, _ *p
 	}
 	dummy := "Initial"
 	nextToken := &dummy
-	input := &athena.ListQueryExecutionsInput{
-		MaxResults: limit,
+
+	attributeKey := "EventName"
+	attributeValue := "StartQueryExecution"
+
+	lookupAttribute := cloudtrail.LookupAttribute{
+		AttributeKey:   &attributeKey,
+		AttributeValue: &attributeValue,
 	}
+
+	lookupAttributes := []*cloudtrail.LookupAttribute{&lookupAttribute}
+
+	input := &cloudtrail.LookupEventsInput{
+		MaxResults:       limit,
+		StartTime:        &startTime,
+		EndTime:          &endTime,
+		LookupAttributes: lookupAttributes,
+	}
+
 	for nextToken != nil {
+
 		if dummy != "Initial" {
-			input = &athena.ListQueryExecutionsInput{
-				MaxResults: limit,
-				NextToken:  nextToken,
+			input = &cloudtrail.LookupEventsInput{
+				MaxResults:       limit,
+				NextToken:        nextToken,
+				StartTime:        &startTime,
+				EndTime:          &endTime,
+				LookupAttributes: lookupAttributes,
 			}
+		} else {
+			dummy = "NotInitial"
 		}
-		queryResult, err := svc.ListQueryExecutions(input)
+		queryResult, err := svcCT.LookupEvents(input)
 
 		if err != nil {
 			plugin.Logger(ctx).Error("aws_athena_query_execution.listQueryExecution", "api_error", err)
 			return nil, err
 		}
 		nextToken = queryResult.NextToken
-		for _, query_id := range queryResult.QueryExecutionIds {
+
+		for _, event := range queryResult.Events {
+			var structEvent CloudTrailEvent
+			if err := json.Unmarshal([]byte(*event.CloudTrailEvent), &structEvent); err != nil {
+				plugin.Logger(ctx).Error("Unmarshal Failed(CloudTrailEvent from LookupEvents):"+*event.CloudTrailEvent, "api_error", err)
+				continue
+			}
 			params := &athena.GetQueryExecutionInput{
-				QueryExecutionId: query_id,
+				QueryExecutionId: &structEvent.ResponseElements.QueryExecutionID,
 			}
 			qe, err := svc.GetQueryExecution(params)
 			if err != nil {
-				plugin.Logger(ctx).Error("GetQueryExecution Error:", err)
+				plugin.Logger(ctx).Trace("GetQueryExecutionError:", "api_error", err)
 				continue
 			}
 			var aqes AthenaQueryExecution
 			if qe != nil {
 				aqes = MakeQueryExecutionRow(qe)
+				aqes.Username = strings.Split(structEvent.UserIdentity.PrincipalID, ":")[1]
+				aqes.EventTime = structEvent.EventTime
+				aqes.StartTime = inputStartTime
+				aqes.EndTime = inputEndTime
 			}
 			d.StreamListItem(ctx, aqes)
 			// Context may get cancelled due to manual cancellation or if the limit has been reached
@@ -295,7 +463,7 @@ func listAwsAthenaQueryExecutions(ctx context.Context, d *plugin.QueryData, _ *p
 }
 
 func getAwsAthenaQueryExecution(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (interface{}, error) {
-	plugin.Logger(ctx).Trace("getAwsAthenaQueryExecution")
+	// plugin.Logger(ctx).Trace("getAwsAthenaQueryExecution")
 
 	query_id := d.KeyColumnQuals["query_id"].GetStringValue()
 
@@ -324,7 +492,7 @@ func getAwsAthenaQueryExecution(ctx context.Context, d *plugin.QueryData, _ *plu
 
 	// plugin.Logger(ctx).Error("@DBG3-0:")
 	// __jsonb, err := json.Marshal(qe)
-	// plugin.Logger(ctx).Error("@DBG3-0-1:" + string(__jsonb) + "\n")
+	// plugin.Logger(ctx).Error("@DBG3-0-1:" + string(__jsonb))
 	// if err != nil {
 	// 	return nil, nil
 	// }
