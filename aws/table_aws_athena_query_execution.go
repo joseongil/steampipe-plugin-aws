@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -155,7 +154,7 @@ func tableAwsAthenaQueryExecution(_ context.Context) *plugin.Table {
 				Type:        proto.ColumnType_STRING,
 			},
 			{
-				Name:        "username",
+				Name:        "principal_id",
 				Description: "The username executed query",
 				Type:        proto.ColumnType_STRING,
 			},
@@ -193,7 +192,7 @@ type AthenaQueryExecution struct {
 	CompletionTime                    time.Time
 	StartTime                         string
 	EndTime                           string
-	Username                          string
+	PrincipalId                       string
 	EventTime                         time.Time
 }
 
@@ -446,7 +445,8 @@ func listAwsAthenaQueryExecutions(ctx context.Context, d *plugin.QueryData, _ *p
 			var aqes AthenaQueryExecution
 			if qe != nil {
 				aqes = MakeQueryExecutionRow(qe)
-				aqes.Username = strings.Split(structEvent.UserIdentity.PrincipalID, ":")[1]
+				// aqes.Username = strings.Split(structEvent.UserIdentity.PrincipalID, ":")[1]
+				aqes.PrincipalId = structEvent.UserIdentity.PrincipalID
 				aqes.EventTime = structEvent.EventTime
 				aqes.StartTime = inputStartTime
 				aqes.EndTime = inputEndTime
