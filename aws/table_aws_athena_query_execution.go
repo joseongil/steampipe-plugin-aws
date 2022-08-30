@@ -164,11 +164,6 @@ func tableAwsAthenaQueryExecution(_ context.Context) *plugin.Table {
 				Type:        proto.ColumnType_TIMESTAMP,
 			},
 			{
-				Name:        "event_time",
-				Description: "The time at completion of query",
-				Type:        proto.ColumnType_TIMESTAMP,
-			},
-			{
 				Name:        "account_id",
 				Description: "The account id of event",
 				Type:        proto.ColumnType_STRING,
