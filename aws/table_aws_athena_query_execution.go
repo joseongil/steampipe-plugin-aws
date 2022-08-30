@@ -164,12 +164,12 @@ func tableAwsAthenaQueryExecution(_ context.Context) *plugin.Table {
 				Type:        proto.ColumnType_TIMESTAMP,
 			},
 			{
-				Name:        "account_id",
+				Name:        "aws_account_id",
 				Description: "The account id of event",
 				Type:        proto.ColumnType_STRING,
 			},
 			{
-				Name:        "region",
+				Name:        "aws_region",
 				Description: "The region of event",
 				Type:        proto.ColumnType_STRING,
 			},
@@ -204,8 +204,8 @@ type AthenaQueryExecution struct {
 	EndTime                           string
 	PrincipalId                       string
 	EventTime                         time.Time
-	AccountId                         string
-	Region                            string
+	AwsAccountId                      string
+	AwsRegion                         string
 }
 
 func MakeQueryExecutionRow(qe *athena.GetQueryExecutionOutput) AthenaQueryExecution {
@@ -462,8 +462,8 @@ func listAwsAthenaQueryExecutions(ctx context.Context, d *plugin.QueryData, _ *p
 				aqes.EventTime = structEvent.EventTime
 				aqes.StartTime = inputStartTime
 				aqes.EndTime = inputEndTime
-				aqes.AccountId = structEvent.UserIdentity.AccountID
-				aqes.Region = structEvent.AwsRegion
+				aqes.AwsAccountId = structEvent.UserIdentity.AccountID
+				aqes.AwsRegion = structEvent.AwsRegion
 			}
 			d.StreamListItem(ctx, aqes)
 			// Context may get cancelled due to manual cancellation or if the limit has been reached
