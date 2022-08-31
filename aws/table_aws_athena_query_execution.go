@@ -154,8 +154,8 @@ func tableAwsAthenaQueryExecution(_ context.Context) *plugin.Table {
 				Type:        proto.ColumnType_STRING,
 			},
 			{
-				Name:        "principal_id",
-				Description: "The username executed query",
+				Name:        "user_identity",
+				Description: "The user identity json string of user executed query",
 				Type:        proto.ColumnType_STRING,
 			},
 			{
@@ -202,7 +202,7 @@ type AthenaQueryExecution struct {
 	CompletionTime                    time.Time
 	StartTime                         string
 	EndTime                           string
-	PrincipalId                       string
+	UserIdentity                      string
 	EventTime                         time.Time
 	AwsAccountId                      string
 	AwsRegion                         string
@@ -458,7 +458,8 @@ func listAwsAthenaQueryExecutions(ctx context.Context, d *plugin.QueryData, _ *p
 			if qe != nil {
 				aqes = MakeQueryExecutionRow(qe)
 				// aqes.Username = strings.Split(structEvent.UserIdentity.PrincipalID, ":")[1]
-				aqes.PrincipalId = structEvent.UserIdentity.PrincipalID
+				userIdentityB, _ := json.Marshal(structEvent.UserIdentity)
+				aqes.UserIdentity = string(userIdentityB)
 				aqes.EventTime = structEvent.EventTime
 				aqes.StartTime = inputStartTime
 				aqes.EndTime = inputEndTime
