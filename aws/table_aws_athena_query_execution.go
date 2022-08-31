@@ -153,11 +153,11 @@ func tableAwsAthenaQueryExecution(_ context.Context) *plugin.Table {
 				Description: "The trail time at end of query",
 				Type:        proto.ColumnType_STRING,
 			},
-			// {
-			// 	Name:        "user_identity",
-			// 	Description: "The user identity json string of user executed query",
-			// 	Type:        proto.ColumnType_STRING,
-			// },
+			{
+				Name:        "user_identity",
+				Description: "The user identity json string of user executed query",
+				Type:        proto.ColumnType_STRING,
+			},
 			{
 				Name:        "event_time",
 				Description: "The time at completion of query",
@@ -202,10 +202,10 @@ type AthenaQueryExecution struct {
 	CompletionTime                    time.Time
 	StartTime                         string
 	EndTime                           string
-	// UserIdentity                      string
-	EventTime    time.Time
-	AwsAccountId string
-	AwsRegion    string
+	UserIdentity                      string
+	EventTime                         time.Time
+	AwsAccountId                      string
+	AwsRegion                         string
 }
 
 func MakeQueryExecutionRow(qe *athena.GetQueryExecutionOutput) AthenaQueryExecution {
@@ -458,8 +458,8 @@ func listAwsAthenaQueryExecutions(ctx context.Context, d *plugin.QueryData, _ *p
 			if qe != nil {
 				aqes = MakeQueryExecutionRow(qe)
 				// aqes.Username = strings.Split(structEvent.UserIdentity.PrincipalID, ":")[1]
-				// userIdentityB, _ := json.Marshal(structEvent.UserIdentity)
-				// aqes.UserIdentity = string(userIdentityB)
+				userIdentityB, _ := json.Marshal(structEvent.UserIdentity)
+				aqes.UserIdentity = string(userIdentityB)
 				aqes.EventTime = structEvent.EventTime
 				aqes.StartTime = inputStartTime
 				aqes.EndTime = inputEndTime
