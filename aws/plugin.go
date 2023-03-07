@@ -13,7 +13,7 @@ import (
 	"github.com/turbot/steampipe-plugin-sdk/v3/plugin/transform"
 )
 
-const pluginName = "steampipe-plugin-aws"
+const pluginName = "steampipe-plugin-aws-zb"
 
 // Plugin creates this (aws) plugin
 func Plugin(ctx context.Context) *plugin.Plugin {

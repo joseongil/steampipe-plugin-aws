@@ -1,5 +1,5 @@
-connection "aws" {
-  plugin = "aws"
+connection "awszb" {
+  plugin = "zigbang.com/aws-zb"
 
   # You may connect to one or more regions. If `regions` is not specified,
   # Steampipe will use a single default region using the same resolution
