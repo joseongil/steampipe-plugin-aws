@@ -4,5 +4,5 @@ install:
 
 
 local:
-	go build -o  ~/.steampipe/plugins/local/aws-zb-local/aws-zb-local.plugin *.go
+	go build -o  ~/.steampipe/plugins/local/aws-zb/aws-zb.plugin *.go
 
